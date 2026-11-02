@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 
@@ -8,6 +9,8 @@ function UploadPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
+  const plantId = location.state?.plantId;
 
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
@@ -26,7 +29,7 @@ function UploadPage() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       // Pass the result AND the original file to the Result page via navigation state
-      navigate('/result', { state: { result: res.data, file } });
+      navigate('/result', { state: { result: res.data, file, plantId } });
     } catch (err) {
       setError('Something went wrong analyzing the image. Please try again.');
     } finally {
