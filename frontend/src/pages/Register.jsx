@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import { getErrorMessage } from '../api/errors';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../api/axios';
 
 function Register({ onLogin }) {
-  const [form, setForm] = useState({ username: '', email: '', password: '' });
+  const [form, setForm] = useState({ username: '', email: '', password: '', confirm: '' });
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
@@ -12,18 +13,25 @@ function Register({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (form.password !== form.confirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+    const { confirm, ...payload } = form; // don't send "confirm" to the server
     try {
       await api.get('/auth/csrf/');
-      await api.post('/auth/register/', form);
-      // auto-login right after successful registration
-      const res = await api.post('/auth/login/', { username: form.username, password: form.password });
+      await api.post('/auth/register/', payload);
+      const res = await api.post('/auth/login/', {
+        username: payload.username,
+        password: payload.password,
+      });
       onLogin(res.data);
       navigate('/dashboard');
     } catch (err) {
-      const data = err.response?.data;
-      setError(data ? JSON.stringify(data) : 'Registration failed.');
+      setError(getErrorMessage(err, 'Registration failed.'));
     }
   };
+
 
   return (
     <div className="container d-flex justify-content-center align-items-center" style={{ minHeight: '100vh' }}>
@@ -43,6 +51,11 @@ function Register({ onLogin }) {
             <label className="form-label">Password</label>
             <input name="password" type="password" className="form-control" onChange={handleChange} required />
           </div>
+          <div className="mb-3">
+            <label className="form-label">Confirm Password</label>
+            <input name="confirm" type="password" className="form-control" onChange={handleChange} required />
+          </div>
+
           <button type="submit" className="btn btn-success w-100">Create Account</button>
         </form>
         <p className="text-center mt-3 mb-0">
