@@ -1,16 +1,22 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+
 import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+import { getErrorMessage } from '../api/errors';
+import SeverityBadge from '../components/SeverityBadge';
 
 function ResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
+
   const [nickname, setNickname] = useState('');
+  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
 
   if (!state || !state.result) {
     return (
-      <div className="container py-5">
+      <div className="container py-4">
         <p>No result to show. Please upload a leaf photo first.</p>
         <button
           className="btn btn-success"
@@ -22,32 +28,64 @@ function ResultPage() {
     );
   }
 
-  // Get result, uploaded file, and optional existing plant ID
   const { result, file, plantId } = state;
 
-  const severityColor = {
-    healthy: 'success',
-    mild: 'warning',
-    moderate: 'warning',
-    severe: 'danger',
-  }[result.severity] || 'secondary';
+  // Handle low-confidence predictions
+  if (result.uncertain) {
+    return (
+      <div className="container py-4" style={{ maxWidth: '640px' }}>
+        <div className="card p-4">
+          <h4>We're not sure about this one</h4>
+
+          <p>
+            The model's confidence is low ({result.confidence_score}%).
+            This usually means the photo is unclear, isn't a leaf,
+            or shows a plant the model wasn't trained on.
+          </p>
+
+          {result.alternatives?.length > 0 && (
+            <>
+              <p className="mb-1">Closest guesses:</p>
+
+              <ul>
+                {result.alternatives.map((a) => (
+                  <li key={a.class_name}>
+                    {a.label} ({a.confidence_score}%)
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          <button
+            className="btn btn-success"
+            onClick={() => navigate('/upload')}
+          >
+            Try Another Photo
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const handleSave = async () => {
+    if (saving) return;
+
+    setSaving(true);
+    setError('');
+
     try {
-      // If scanning an existing plant, reuse its ID.
-      // Otherwise, create a new plant.
       let targetPlantId = plantId;
 
       if (!targetPlantId) {
         const plantRes = await api.post('/plants/', {
           species_name: result.species_name,
-          nickname: nickname || '',
+          nickname: nickname.trim(),
         });
 
         targetPlantId = plantRes.data.id;
       }
 
-      // Create the CareHistory entry
       const formData = new FormData();
 
       formData.append('plant', targetPlantId);
@@ -63,33 +101,51 @@ function ResultPage() {
 
       setSaved(true);
     } catch (err) {
-      alert('Could not save this plant. Please try again.');
+      setError(
+        getErrorMessage(err, 'Could not save this plant. Please try again.')
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <div className="container py-5" style={{ maxWidth: '600px' }}>
+    <div className="container py-4" style={{ maxWidth: '640px' }}>
       <div className="card p-4">
-        <h3>{result.species_name}</h3>
+        <div className="d-flex justify-content-between align-items-start">
+          <div>
+            <h3 className="mb-0">{result.species_name}</h3>
+            <h5 className="text-muted">{result.detected_condition}</h5>
+          </div>
 
-        <h5 className="text-muted">
-          {result.detected_condition}
-        </h5>
-
-        <p>Confidence: {result.confidence_score}%</p>
-
-        <span className={`badge bg-${severityColor} mb-3`}>
-          {result.severity.toUpperCase()}
-        </span>
-
-        <div className="bg-light border rounded p-3 mb-3">
-          <strong>Recommended Care:</strong>
-          <p className="mb-0">{result.recommendation}</p>
+          <SeverityBadge severity={result.severity} />
         </div>
+
+        <div className="mt-3">
+          <small>Confidence: {result.confidence_score}%</small>
+
+          <div className="progress mb-3" style={{ height: '10px' }}>
+            <div
+              className="progress-bar bg-success"
+              style={{ width: `${result.confidence_score}%` }}
+            />
+          </div>
+        </div>
+
+        <div
+          className="border rounded p-3 mb-3"
+          style={{ background: '#e8f5e9' }}
+        >
+          <strong>Recommended Care</strong>
+          <p className="mb-0 mt-1">{result.recommendation}</p>
+        </div>
+
+        {error && (
+          <div className="alert alert-danger py-2">{error}</div>
+        )}
 
         {!saved ? (
           <>
-            {/* Only show nickname field when creating a NEW plant */}
             {!plantId && (
               <input
                 className="form-control mb-2"
@@ -99,31 +155,37 @@ function ResultPage() {
               />
             )}
 
-            <button
-              className="btn btn-success me-2"
-              onClick={handleSave}
-            >
-              Save to My Plants
-            </button>
+            <div>
+              <button
+                className="btn btn-success me-2"
+                onClick={handleSave}
+                disabled={saving}
+              >
+                {saving
+                  ? 'Saving...'
+                  : plantId
+                    ? 'Add to Plant History'
+                    : 'Save to My Plants'}
+              </button>
 
-            <button
-              className="btn btn-outline-secondary"
-              onClick={() => navigate('/upload')}
-            >
-              Scan Another Leaf
-            </button>
+              <button
+                className="btn btn-outline-secondary"
+                onClick={() => navigate('/upload')}
+                disabled={saving}
+              >
+                Scan Another Leaf
+              </button>
+            </div>
           </>
         ) : (
           <>
-            <div className="alert alert-success">
-              Saved!
-            </div>
+            <div className="alert alert-success">Saved!</div>
 
             <button
               className="btn btn-success"
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate('/my-plants')}
             >
-              Go to Dashboard
+              Go to My Plants
             </button>
           </>
         )}

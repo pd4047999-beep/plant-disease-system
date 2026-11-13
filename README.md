@@ -21,11 +21,22 @@ recommendations, and keep a care history for each saved plant.
 cd backend
 python -m venv ../backend-env
 ../backend-env/Scripts/activate        # Windows
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
+
+
+## Model and Dataset Credits
+
+- Model: Daksh159/plant-disease-mobilenetv2
+- Architecture: MobileNetV2
+- Dataset: PlantVillage
+- The model is pretrained and is used for plant disease classification.
+- The model supports 38 classes across 14 crop types.
+
 
 ### Frontend
 ```bash
