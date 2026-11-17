@@ -1,93 +1,76 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
+import { getErrorMessage } from '../api/errors';
+import AuthLayout from '../components/AuthLayout';
 
 function Login({ onLogin }) {
-  const [username, setUsername] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
+    setLoading(true);
     try {
-      // Step 1: Get a CSRF cookie before the first POST
       await api.get('/auth/csrf/');
-
-      // Step 2: Log in
-      const res = await api.post('/auth/login/', {
-        username,
-        password,
-      });
-
-      // Step 3: Update the login state
+      const res = await api.post('/auth/login/', { username: identifier.trim(), password });
       onLogin(res.data);
-
-      // Step 4: Navigate to the dashboard
       navigate('/dashboard');
     } catch (err) {
-      setError('Invalid username or password.');
+      setError(getErrorMessage(err, 'Invalid email/username or password.'));
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div
-      className="container d-flex justify-content-center align-items-center"
-      style={{ minHeight: '100vh' }}
-    >
-      <div className="card p-4" style={{ width: '350px' }}>
-        <h3 className="text-center mb-3">
-          🌿 Plant Care Login
-        </h3>
+    <AuthLayout>
+      <div className="pc-card pc-auth__card">
+        <h2>Welcome back</h2>
+        <p className="pc-auth__sub">Please enter your details to access your garden</p>
 
-        {error && (
-          <div className="alert alert-danger py-2">
-            {error}
-          </div>
-        )}
+        {error && <div className="pc-alert pc-alert--error">{error}</div>}
 
         <form onSubmit={handleSubmit}>
-          <div className="mb-3">
-            <label className="form-label">Username</label>
+          <div className="pc-field">
+            <label className="pc-label" htmlFor="identifier">Email or Username</label>
             <input
-              type="text"
-              className="form-control"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              id="identifier"
+              className="pc-input"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              autoComplete="username"
               required
             />
           </div>
 
-          <div className="mb-3">
-            <label className="form-label">Password</label>
+          <div className="pc-field">
+            <label className="pc-label" htmlFor="password">Password</label>
             <input
+              id="password"
               type="password"
-              className="form-control"
+              className="pc-input"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
               required
             />
           </div>
 
-          <button
-            type="submit"
-            className="btn btn-success w-100"
-          >
-            Log In
+          <button type="submit" className="pc-btn pc-btn--primary pc-btn--block" disabled={loading}>
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
 
-        {/* Register link */}
-        <p className="text-center mt-3 mb-0">
-          <Link to="/register">
-            Don't have an account? Register
-          </Link>
+        <p className="pc-auth__switch">
+          New to PlantCare? <Link to="/register" className="pc-link">Create an account</Link>
         </p>
       </div>
-    </div>
+    </AuthLayout>
   );
 }
 
