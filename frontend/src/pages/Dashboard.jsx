@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowRight, Camera } from 'lucide-react';
 import api from '../api/axios';
-import SeverityBadge from '../components/SeverityBadge';
+import PlantCard from '../components/PlantCard';
+import { formatTime, timeAgo } from '../utils/format';
 
-function Dashboard() {
+function Dashboard({ user }) {
   const [plants, setPlants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -16,71 +18,89 @@ function Dashboard() {
   }, []);
 
   if (loading) {
-    return <div className="container py-4"><div className="spinner-border text-success" /></div>;
+    return <div className="pc-loading"><div className="pc-spinner" /></div>;
   }
 
-  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const allScans = plants.flatMap((p) =>
-    p.history.map((h) => ({ ...h, plantName: p.nickname || p.species_name, plantId: p.id }))
-  );
-  const scansThisWeek = allScans.filter((s) => new Date(s.created_at).getTime() >= weekAgo).length;
-  const needAttention = plants.filter(
-    (p) => p.history[0] && ['moderate', 'severe'].includes(p.history[0].severity)
-  );
-  const recent = [...allScans]
+  const scanned = plants.filter((p) => p.history.length > 0);
+  const healthyCount = scanned.filter((p) => p.history[0].severity === 'healthy').length;
+  const attentionCount = scanned.filter((p) => ['moderate', 'severe'].includes(p.history[0].severity)).length;
+  const score = scanned.length ? Math.round((healthyCount / scanned.length) * 100) : null;
+
+  const monitored = [...scanned]
+    .sort((a, b) => new Date(b.history[0].created_at) - new Date(a.history[0].created_at))
+    .slice(0, 4);
+
+  const recent = plants
+    .flatMap((p) => p.history.map((h) => ({ ...h, plantName: p.nickname || p.species_name, plantId: p.id })))
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
     .slice(0, 5);
 
+  let summary;
+  if (score === null) {
+    summary = "You haven't scanned any plants yet. Upload a leaf photo to get your first health check.";
+  } else {
+    summary = `Your garden health score is ${score}%: ${healthyCount} of ${scanned.length} saved plant${scanned.length === 1 ? '' : 's'} look${scanned.length === 1 ? 's' : ''} healthy`;
+    summary += attentionCount > 0
+      ? `, and ${attentionCount} need${attentionCount === 1 ? 's' : ''} attention.`
+      : '.';
+  }
+
   return (
-    <div className="container py-4">
-      <div className="d-flex justify-content-between align-items-center mb-4">
-        <h3 className="mb-0">Dashboard</h3>
-        <Link to="/upload" className="btn btn-success">+ Scan a New Plant</Link>
+    <div className="pc-container pc-page">
+      <section className="pc-banner">
+        <div>
+          <h1>Welcome back, {user?.username}!</h1>
+          <p>{summary} Scan a new leaf any time for an instant diagnostic report.</p>
+        </div>
+        <Link to="/upload" className="pc-btn pc-btn--white">
+          <Camera size={18} /> Scan New Leaf
+        </Link>
+      </section>
+
+      {error && <div className="pc-alert pc-alert--error" style={{ marginTop: 24 }}>{error}</div>}
+
+      <div className="pc-section-head">
+        <h2>My Monitored Plants</h2>
+        <Link to="/my-plants" className="pc-link">
+          View All Collection ({plants.length}) <ArrowRight size={16} />
+        </Link>
       </div>
 
-      {error && <div className="alert alert-danger">{error}</div>}
-
-      <div className="row mb-4">
-        <div className="col-md-4 mb-2">
-          <div className="card p-3 text-center">
-            <h2 className="mb-0">{plants.length}</h2>
-            <small className="text-muted">Saved plants</small>
-          </div>
-        </div>
-        <div className="col-md-4 mb-2">
-          <div className="card p-3 text-center">
-            <h2 className="mb-0">{scansThisWeek}</h2>
-            <small className="text-muted">Scans this week</small>
-          </div>
-        </div>
-        <div className="col-md-4 mb-2">
-          <div className="card p-3 text-center">
-            <h2 className="mb-0">{needAttention.length}</h2>
-            <small className="text-muted">Plants needing attention</small>
-          </div>
-        </div>
-      </div>
-
-      <h5>Recent Activity</h5>
-      {recent.length === 0 ? (
-        <p className="text-muted">No scans yet. Scan your first plant to get started!</p>
+      {monitored.length === 0 ? (
+        <div className="pc-card pc-empty">No scanned plants yet. Scan your first leaf to start monitoring.</div>
       ) : (
-        <div className="list-group">
-          {recent.map((s) => (
-            <Link
-              key={s.id}
-              to={`/plants/${s.plantId}`}
-              className="list-group-item list-group-item-action d-flex align-items-center gap-3"
-            >
-              <img src={s.image} alt="" width="48" height="48" className="rounded" style={{ objectFit: 'cover' }} />
-              <div className="flex-grow-1">
-                <strong>{s.plantName}</strong>
-                <div className="text-muted small">{s.detected_condition}</div>
-              </div>
-              <SeverityBadge severity={s.severity} />
-              <small className="text-muted">{new Date(s.created_at).toLocaleDateString()}</small>
-            </Link>
+        <div className="pc-grid pc-grid--4">
+          {monitored.map((plant) => (
+            <PlantCard key={plant.id} plant={plant} />
           ))}
+        </div>
+      )}
+
+      <div className="pc-section-head">
+        <h2>Recent Activity Log</h2>
+      </div>
+
+      {recent.length === 0 ? (
+        <div className="pc-card pc-empty">Your scan activity will appear here.</div>
+      ) : (
+        <div className="pc-card pc-activity">
+          {recent.map((scan) => {
+            const alert = ['moderate', 'severe'].includes(scan.severity);
+            return (
+              <Link to={`/plants/${scan.plantId}`} className="pc-activity__row" key={scan.id}>
+                <span className={`pc-dot pc-dot--${scan.severity}`} />
+                <span className="pc-activity__text">
+                  {scan.severity === 'healthy'
+                    ? `Healthy scan recorded for ${scan.plantName}`
+                    : `Detected '${scan.detected_condition}' on ${scan.plantName}`}
+                </span>
+                <span className="pc-chip-tag">{alert ? 'Diagnostic Alert' : 'Routine Check'}</span>
+                <span className="pc-activity__time" title={timeAgo(scan.created_at)}>
+                  {formatTime(scan.created_at)}
+                </span>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

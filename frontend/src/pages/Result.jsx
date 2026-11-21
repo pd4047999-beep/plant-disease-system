@@ -1,93 +1,58 @@
-
-import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import { getErrorMessage } from '../api/errors';
-import SeverityBadge from '../components/SeverityBadge';
+import SeverityPill from '../components/SeverityPill';
+import { formatDateTime, splitSteps } from '../utils/format';
 
 function ResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
-
   const [nickname, setNickname] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [savedPlantId, setSavedPlantId] = useState(null);
   const [error, setError] = useState('');
+  const [diagnosedAt] = useState(() => new Date());
+
+  const file = state?.file;
+  const previewUrl = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   if (!state || !state.result) {
     return (
-      <div className="container py-4">
-        <p>No result to show. Please upload a leaf photo first.</p>
-        <button
-          className="btn btn-success"
-          onClick={() => navigate('/upload')}
-        >
-          Go to Upload
-        </button>
-      </div>
-    );
-  }
-
-  const { result, file, plantId } = state;
-
-  // Handle low-confidence predictions
-  if (result.uncertain) {
-    return (
-      <div className="container py-4" style={{ maxWidth: '640px' }}>
-        <div className="card p-4">
-          <h4>We're not sure about this one</h4>
-
-          <p>
-            The model's confidence is low ({result.confidence_score}%).
-            This usually means the photo is unclear, isn't a leaf,
-            or shows a plant the model wasn't trained on.
-          </p>
-
-          {result.alternatives?.length > 0 && (
-            <>
-              <p className="mb-1">Closest guesses:</p>
-
-              <ul>
-                {result.alternatives.map((a) => (
-                  <li key={a.class_name}>
-                    {a.label} ({a.confidence_score}%)
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-
-          <button
-            className="btn btn-success"
-            onClick={() => navigate('/upload')}
-          >
-            Try Another Photo
+      <div className="pc-container pc-page">
+        <div className="pc-card pc-empty">
+          <p>No result to show. Please upload a leaf photo first.</p>
+          <button className="pc-btn pc-btn--primary" style={{ marginTop: 16 }} onClick={() => navigate('/upload')}>
+            Go to Detect Disease
           </button>
         </div>
       </div>
     );
   }
 
+  const { result, plantId } = state;
+  const confidence = Math.max(0, Math.min(100, Number(result.confidence_score) || 0));
+
   const handleSave = async () => {
     if (saving) return;
-
     setSaving(true);
     setError('');
-
     try {
       let targetPlantId = plantId;
-
       if (!targetPlantId) {
         const plantRes = await api.post('/plants/', {
           species_name: result.species_name,
           nickname: nickname.trim(),
         });
-
         targetPlantId = plantRes.data.id;
       }
 
       const formData = new FormData();
-
       formData.append('plant', targetPlantId);
       formData.append('image', file);
       formData.append('detected_condition', result.detected_condition);
@@ -98,97 +63,142 @@ function ResultPage() {
       await api.post('/care-history/', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-
-      setSaved(true);
+      setSavedPlantId(targetPlantId);
     } catch (err) {
-      setError(
-        getErrorMessage(err, 'Could not save this plant. Please try again.')
-      );
+      setError(getErrorMessage(err, 'Could not save this plant. Please try again.'));
     } finally {
       setSaving(false);
     }
   };
 
-  return (
-    <div className="container py-4" style={{ maxWidth: '640px' }}>
-      <div className="card p-4">
-        <div className="d-flex justify-content-between align-items-start">
-          <div>
-            <h3 className="mb-0">{result.species_name}</h3>
-            <h5 className="text-muted">{result.detected_condition}</h5>
-          </div>
+  const imageCard = (
+    <div className="pc-card pc-result__image">
+      {previewUrl && <img src={previewUrl} alt="Scanned leaf" />}
+      <div className="pc-result__meta">
+        <div>Filename: <b>{file?.name}</b></div>
+        <div>Diagnosed on: <b>{formatDateTime(diagnosedAt)}</b></div>
+      </div>
+    </div>
+  );
 
-          <SeverityBadge severity={result.severity} />
-        </div>
+  // Low-confidence answer: show the closest guesses instead of a diagnosis.
+  if (result.uncertain) {
+    return (
+      <div className="pc-container pc-page">
+        <div className="pc-result">
+          {imageCard}
+          <div className="pc-card">
+            <h1 className="pc-result__title">We&apos;re not sure about this one</h1>
+            <p style={{ marginTop: 20 }}>
+              The model&apos;s confidence is low ({confidence}%). This usually means the photo is unclear,
+              isn&apos;t a leaf, or shows a plant the model wasn&apos;t trained on.
+            </p>
 
-        <div className="mt-3">
-          <small>Confidence: {result.confidence_score}%</small>
-
-          <div className="progress mb-3" style={{ height: '10px' }}>
-            <div
-              className="progress-bar bg-success"
-              style={{ width: `${result.confidence_score}%` }}
-            />
-          </div>
-        </div>
-
-        <div
-          className="border rounded p-3 mb-3"
-          style={{ background: '#e8f5e9' }}
-        >
-          <strong>Recommended Care</strong>
-          <p className="mb-0 mt-1">{result.recommendation}</p>
-        </div>
-
-        {error && (
-          <div className="alert alert-danger py-2">{error}</div>
-        )}
-
-        {!saved ? (
-          <>
-            {!plantId && (
-              <input
-                className="form-control mb-2"
-                placeholder="Give this plant a nickname (optional)"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-              />
+            {result.alternatives?.length > 0 && (
+              <>
+                <h3 className="pc-sub">Closest guesses</h3>
+                <div className="pc-guess">
+                  {result.alternatives.map((a) => (
+                    <div key={a.class_name}>
+                      <div className="pc-guess__row">
+                        <span>{a.label}</span>
+                        <span className="pc-muted">{a.confidence_score}%</span>
+                      </div>
+                      <div className="pc-progress">
+                        <div className="pc-progress__bar" style={{ width: `${a.confidence_score}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
 
-            <div>
-              <button
-                className="btn btn-success me-2"
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving
-                  ? 'Saving...'
-                  : plantId
-                    ? 'Add to Plant History'
-                    : 'Save to My Plants'}
-              </button>
-
-              <button
-                className="btn btn-outline-secondary"
-                onClick={() => navigate('/upload')}
-                disabled={saving}
-              >
-                Scan Another Leaf
+            <div className="pc-result__actions">
+              <button className="pc-btn pc-btn--primary" onClick={() => navigate('/upload', { state: { plantId } })}>
+                Try Another Photo
               </button>
             </div>
-          </>
-        ) : (
-          <>
-            <div className="alert alert-success">Saved!</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-            <button
-              className="btn btn-success"
-              onClick={() => navigate('/my-plants')}
-            >
-              Go to My Plants
-            </button>
-          </>
-        )}
+  const healthy = result.severity === 'healthy';
+  const steps = splitSteps(result.recommendation);
+
+  return (
+    <div className="pc-container pc-page">
+      <div className="pc-result">
+        {imageCard}
+
+        <div className="pc-card">
+          <div className="pc-result__pills">
+            <span className="pc-pill pc-pill--species">{result.species_name.toUpperCase()}</span>
+            <SeverityPill severity={result.severity} />
+          </div>
+
+          <h1 className="pc-result__title">
+            {healthy ? 'No Disease Detected' : `${result.detected_condition} Detected`}
+          </h1>
+
+          <div className="pc-confidence">
+            <div className="pc-confidence__row">
+              <span>Engine Confidence Score</span>
+              <strong>{confidence}%</strong>
+            </div>
+            <div className="pc-progress">
+              <div className="pc-progress__bar" style={{ width: `${confidence}%` }} />
+            </div>
+          </div>
+
+          <h3 className="pc-sub">Care Recommendations</h3>
+          <div className="pc-steps">
+            {steps.map((step, index) => (
+              <div className="pc-step" key={index}>
+                <span className="pc-step__num">{index + 1}</span>
+                <span>{step}</span>
+              </div>
+            ))}
+          </div>
+          <p className="pc-disclaimer">
+            General guidance from an automated model. It is not a substitute for advice from a plant or agriculture expert.
+          </p>
+
+          {error && <div className="pc-alert pc-alert--error" style={{ marginTop: 20 }}>{error}</div>}
+
+          {savedPlantId ? (
+            <>
+              <div className="pc-alert pc-alert--success" style={{ marginTop: 24 }}>
+                Saved to your collection!
+              </div>
+              <div className="pc-result__actions" style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}>
+                <Link to={`/plants/${savedPlantId}`} className="pc-btn pc-btn--primary">View Plant History</Link>
+                <Link to="/upload" className="pc-btn pc-btn--outline">Scan Another Leaf</Link>
+              </div>
+            </>
+          ) : (
+            <>
+              {!plantId && (
+                <input
+                  className="pc-input"
+                  style={{ marginTop: 24 }}
+                  placeholder="Give this plant a nickname (optional)"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                />
+              )}
+              <div className="pc-result__actions">
+                <button className="pc-btn pc-btn--primary" onClick={handleSave} disabled={saving}>
+                  {saving ? 'Saving...' : plantId ? 'Add to Plant History' : 'Save to My Plants Collection'}
+                </button>
+                <button className="pc-btn pc-btn--outline" onClick={() => navigate('/upload')} disabled={saving}>
+                  Scan Another Leaf
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

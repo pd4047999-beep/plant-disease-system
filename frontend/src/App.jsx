@@ -1,13 +1,6 @@
 import { useEffect, useState } from 'react';
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  Navigate,
-} from 'react-router-dom';
-
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import api from './api/axios';
-
 import Navbar from './components/Navbar';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -16,135 +9,56 @@ import UploadPage from './pages/Upload';
 import ResultPage from './pages/Result';
 import MyPlants from './pages/MyPlants';
 import PlantDetail from './pages/PlantDetail';
+import AdminPanel from './pages/AdminPanel';
+
+// Pages for logged-in users: top navigation bar + page content.
+function Protected({ user, onLogout, children }) {
+  if (!user) return <Navigate to="/login" replace />;
+  return (
+    <>
+      <Navbar user={user} onLogout={onLogout} />
+      {children}
+    </>
+  );
+}
+
+// The admin panel has its own layout (sidebar) and is only for staff accounts.
+function AdminOnly({ user, children }) {
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.is_staff) return <Navigate to="/dashboard" replace />;
+  return children;
+}
 
 function App() {
-  const [user, setUser] = useState(undefined);
+  const [user, setUser] = useState(undefined); // undefined = still checking
 
-  // Check whether the user is already logged in
   useEffect(() => {
-    api
-      .get('/auth/whoami/')
-      .then((res) => {
-        setUser(res.data.username ? res.data : null);
-      })
-      .catch(() => {
-        setUser(null);
-      });
+    api.get('/auth/whoami/')
+      .then((res) => setUser(res.data.username ? res.data : null))
+      .catch(() => setUser(null));
   }, []);
 
-  // Show loading while checking the login status
   if (user === undefined) {
-    return (
-      <p className="text-center mt-5">
-        Loading...
-      </p>
-    );
+    return <div className="pc-loading"><div className="pc-spinner" /></div>;
   }
 
-  // Protect pages that require authentication
-  const ProtectedRoute = ({ children }) => {
-    if (!user) {
-      return <Navigate to="/login" replace />;
-    }
-
-    return (
-      <>
-        <Navbar
-          user={user}
-          onLogout={() => setUser(null)}
-        />
-        {children}
-      </>
-    );
-  };
+  const logout = () => setUser(null);
+  const guard = (page) => (
+    <Protected user={user} onLogout={logout}>{page}</Protected>
+  );
 
   return (
     <BrowserRouter>
       <Routes>
-        {/* Login page */}
-        <Route
-          path="/login"
-          element={
-            user ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <Login onLogin={setUser} />
-            )
-          }
-        />
-
-        {/* Registration page */}
-        <Route
-          path="/register"
-          element={
-            user ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <Register onLogin={setUser} />
-            )
-          }
-        />
-
-        {/* Dashboard */}
-        <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Upload a leaf image */}
-        <Route
-          path="/upload"
-          element={
-            <ProtectedRoute>
-              <UploadPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Detection result */}
-        <Route
-          path="/result"
-          element={
-            <ProtectedRoute>
-              <ResultPage />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* My Plants page */}
-        <Route
-          path="/my-plants"
-          element={
-            <ProtectedRoute>
-              <MyPlants />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Individual plant details */}
-        <Route
-          path="/plants/:id"
-          element={
-            <ProtectedRoute>
-              <PlantDetail />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Redirect unknown URLs */}
-        <Route
-          path="*"
-          element={
-            <Navigate
-              to={user ? '/dashboard' : '/login'}
-              replace
-            />
-          }
-        />
+        <Route path="/login" element={user ? <Navigate to="/dashboard" replace /> : <Login onLogin={setUser} />} />
+        <Route path="/register" element={user ? <Navigate to="/dashboard" replace /> : <Register onLogin={setUser} />} />
+        <Route path="/dashboard" element={guard(<Dashboard user={user} />)} />
+        <Route path="/upload" element={guard(<UploadPage />)} />
+        <Route path="/result" element={guard(<ResultPage />)} />
+        <Route path="/my-plants" element={guard(<MyPlants />)} />
+        <Route path="/plants/:id" element={guard(<PlantDetail />)} />
+        <Route path="/admin-panel" element={<AdminOnly user={user}><AdminPanel user={user} /></AdminOnly>} />
+        <Route path="*" element={<Navigate to={user ? '/dashboard' : '/login'} replace />} />
       </Routes>
     </BrowserRouter>
   );
